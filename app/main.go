@@ -22,10 +22,15 @@ func do(conn net.Conn) {
 	request := string(buff)
 	parts := strings.Split(request, "\r\n")
 
-	path := strings.Split(strings.Split(parts[0], "/")[1], " ")[0]
-	var response string
-	if strings.Contains(path, ".html") || path == "" {
-		response = "HTTP/1.1 200 OK\r\n\r\n"
+	response := "\r\nContent-Type: text/plain\r\nContent-Length: "
+	path := strings.Split(parts[0], " ")[1]
+	if strings.Contains(path, "/echo") || path == "/" {
+		if path == "/" || path == "/echo" {
+			response = "HTTP/1.1 200 OK" + response + "0\r\n\r\n"
+		} else {
+			param := strings.Split(path, "/")[2]
+			response = "HTTP/1.1 200 OK" + response + fmt.Sprint(len(param)) + "\r\n\r\n" + param
+		}
 	} else {
 		response = "HTTP/1.1 404 Not Found\r\n\r\n"
 	}
