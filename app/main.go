@@ -27,11 +27,18 @@ func do(conn net.Conn) {
 	content_type := "text/plain"
 	for i := 0; i < len(parts); i++ {
 		if strings.Contains(parts[i], "GET") {
-			response += "HTTP/1.1 200 OK\r\n"
+			path := strings.Split(parts[i], " ")[1]
+			if strings.Contains(path, "/echo") {
+				body = strings.Split(path, "/echo/")[1]
+				response += "HTTP/1.1 200 OK\r\n"
+			} else if strings.Contains(path, "/user-agent") {
+				body = strings.Split(strings.Split(request, "User-Agent: ")[1], "\r\n")[0]
+				response += "HTTP/1.1 200 OK\r\n"
+			} else {
+				response += "HTTP/1.1 404 Not Found\r\n"
+			}
 		} else if strings.Contains(parts[i], "Content-Type: ") {
 			content_type = strings.Split(parts[i], ": ")[1]
-		} else if strings.Contains(parts[i], "User-Agent: ") {
-			body = strings.Split(parts[i], ": ")[1]
 		}
 	}
 	content_length := len(body)
