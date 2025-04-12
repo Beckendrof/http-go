@@ -28,7 +28,9 @@ func do(conn net.Conn) {
 	for i := 0; i < len(parts); i++ {
 		if strings.Contains(parts[i], "GET") {
 			path := strings.Split(parts[i], " ")[1]
-			if strings.Contains(path, "/echo") {
+			if path == "/" {
+				response += "HTTP/1.1 200 OK\r\n"
+			} else if strings.Contains(path, "/echo") {
 				body = strings.Split(path, "/echo/")[1]
 				response += "HTTP/1.1 200 OK\r\n"
 			} else if strings.Contains(path, "/user-agent") {
