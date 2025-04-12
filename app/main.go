@@ -22,21 +22,22 @@ func do(conn net.Conn) {
 	request := string(buff)
 	parts := strings.Split(request, "\r\n")
 
-	response := "\r\nContent-Type: text/plain\r\nContent-Length: "
-	path := strings.Split(parts[0], " ")[1]
-	if strings.Contains(path, "/echo") || path == "/" {
-		if path == "/" || path == "/echo" {
-			response = "HTTP/1.1 200 OK" + response + "0\r\n\r\n"
-		} else {
-			param := strings.Split(path, "/")[2]
-			response = "HTTP/1.1 200 OK" + response + fmt.Sprint(len(param)) + "\r\n\r\n" + param
+	response := ""
+	body := ""
+	content_type := "text/plain"
+	for i := 0; i < len(parts); i++ {
+		if strings.Contains(parts[i], "GET") {
+			response += "HTTP/1.1 200 OK\r\n"
+		} else if strings.Contains(parts[i], "Content-Type: ") {
+			content_type = strings.Split(parts[i], ": ")[1]
+		} else if strings.Contains(parts[i], "User-Agent: ") {
+			body = strings.Split(parts[i], ": ")[1]
 		}
-	} else {
-		response = "HTTP/1.1 404 Not Found\r\n\r\n"
 	}
+	content_length := len(body)
+	response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
 
 	conn.Write([]byte(response))
-
 	conn.Close()
 }
 
