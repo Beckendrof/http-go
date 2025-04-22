@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -30,21 +31,21 @@ func userAgent(path string) string {
 	return response
 }
 
-func files(path string) string {
+func files(path string, servePath string) string {
 	file := strings.Split(path, "/files/")[1]
 	content_type := "application/octet-stream"
-	filePath := fmt.Sprintf("tmp/%s", file)
+	filePath := fmt.Sprintf("%s%s", servePath, file)
 	response := "HTTP/1.1 200 OK\r\n"
 
 	_, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
-		return "HTTP/1.1 404 Not Found\r\n\r\n"
+		return "HTTP/1.1 404 Not Found\r\n"
 	}
 
 	fileContent, err := os.ReadFile(filePath)
 	if err != nil {
 		log.Printf("Error reading file: %v", err)
-		return "HTTP/1.1 404 Not Found\r\n\r\n"
+		return "HTTP/1.1 404 Not Found\r\n"
 	}
 
 	content_length := len(fileContent)
@@ -52,13 +53,13 @@ func files(path string) string {
 	return response
 }
 
-func do(conn net.Conn) {
+func do(conn net.Conn, servePath string) {
 	buff := make([]byte, 1024)
 	_, err := conn.Read(buff)
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Parse the HTTP request
+
 	request := string(buff)
 	parts := strings.Split(request, "\r\n")
 
@@ -70,13 +71,13 @@ func do(conn net.Conn) {
 			if path == "/" {
 				response = "HTTP/1.1 200 OK\r\n"
 			} else if strings.Contains(path, "/files") {
-				response = files(path)
+				response = files(path, servePath)
 			} else if strings.Contains(path, "/echo") {
 				response = echo(path)
 			} else if strings.Contains(path, "/user-agent") {
 				response = userAgent(request)
 			} else {
-				response = "HTTP/1.1 404 Not Found\r\n\r\n"
+				response = "HTTP/1.1 404 Not Found\r\n"
 			}
 		}
 	}
@@ -87,7 +88,15 @@ func do(conn net.Conn) {
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
-	fmt.Println("Logs from your program will appear here!")
+	directory := flag.String("directory", ".", "Directory to serve files from")
+	flag.Parse()
+	servePath := *directory
+
+	_, err := os.Stat(servePath)
+	if os.IsNotExist(err) {
+		fmt.Printf("Directory %s does not exist\n", servePath)
+		os.Exit(1)
+	}
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
@@ -100,6 +109,7 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go do(conn)
+
+		go do(conn, servePath)
 	}
 }
