@@ -12,6 +12,46 @@ import (
 var _ = net.Listen
 var _ = os.Exit
 
+func echo(path string) string {
+	body := strings.Split(path, "/echo/")[1]
+	response := "HTTP/1.1 200 OK\r\n"
+	content_type := "text/plain"
+	content_length := len(body)
+	response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
+	return response
+}
+
+func userAgent(path string) string {
+	body := strings.Split(strings.Split(path, "User-Agent: ")[1], "\r\n")[0]
+	response := "HTTP/1.1 200 OK\r\n"
+	content_type := "text/plain"
+	content_length := len(body)
+	response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
+	return response
+}
+
+func files(path string) string {
+	file := strings.Split(path, "/files/")[1]
+	content_type := "application/octet-stream"
+	filePath := fmt.Sprintf("tmp/%s", file)
+	response := "HTTP/1.1 200 OK\r\n"
+
+	_, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		return "HTTP/1.1 404 Not Found\r\n"
+	}
+
+	fileContent, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Error reading file: %v", err)
+		return "HTTP/1.1 404 Not Found\r\n"
+	}
+
+	content_length := len(fileContent)
+	response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, fileContent)
+	return response
+}
+
 func do(conn net.Conn) {
 	buff := make([]byte, 1024)
 	_, err := conn.Read(buff)
@@ -23,28 +63,23 @@ func do(conn net.Conn) {
 	parts := strings.Split(request, "\r\n")
 
 	response := ""
-	body := ""
-	content_type := "text/plain"
 	for i := 0; i < len(parts); i++ {
 		if strings.Contains(parts[i], "GET") {
+			log.Printf("Request: %s", parts[i])
 			path := strings.Split(parts[i], " ")[1]
 			if path == "/" {
-				response += "HTTP/1.1 200 OK\r\n"
+				response = "HTTP/1.1 200 OK\r\n"
+			} else if strings.Contains(path, "/files") {
+				response = files(path)
 			} else if strings.Contains(path, "/echo") {
-				body = strings.Split(path, "/echo/")[1]
-				response += "HTTP/1.1 200 OK\r\n"
+				response = echo(path)
 			} else if strings.Contains(path, "/user-agent") {
-				body = strings.Split(strings.Split(request, "User-Agent: ")[1], "\r\n")[0]
-				response += "HTTP/1.1 200 OK\r\n"
+				response = userAgent(request)
 			} else {
-				response += "HTTP/1.1 404 Not Found\r\n"
+				response = "HTTP/1.1 404 Not Found\r\n"
 			}
-		} else if strings.Contains(parts[i], "Content-Type: ") {
-			content_type = strings.Split(parts[i], ": ")[1]
 		}
 	}
-	content_length := len(body)
-	response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
 
 	conn.Write([]byte(response))
 	conn.Close()
