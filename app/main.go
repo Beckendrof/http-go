@@ -69,7 +69,7 @@ func do(conn net.Conn, servePath string) {
 			log.Printf("Request: %s", parts[i])
 			path := strings.Split(parts[i], " ")[1]
 			if path == "/" {
-				response = "HTTP/1.1 200 OK\r\n"
+				response = "HTTP/1.1 200 OK\r\n\r\n"
 			} else if strings.Contains(path, "/files") {
 				response = files(path, servePath)
 			} else if strings.Contains(path, "/echo") {
