@@ -38,13 +38,13 @@ func files(path string) string {
 
 	_, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
-		return "HTTP/1.1 404 Not Found\r\n"
+		return "HTTP/1.1 404 Not Found\r\n\r\n"
 	}
 
 	fileContent, err := os.ReadFile(filePath)
 	if err != nil {
 		log.Printf("Error reading file: %v", err)
-		return "HTTP/1.1 404 Not Found\r\n"
+		return "HTTP/1.1 404 Not Found\r\n\r\n"
 	}
 
 	content_length := len(fileContent)
@@ -76,7 +76,7 @@ func do(conn net.Conn) {
 			} else if strings.Contains(path, "/user-agent") {
 				response = userAgent(request)
 			} else {
-				response = "HTTP/1.1 404 Not Found\r\n"
+				response = "HTTP/1.1 404 Not Found\r\n\r\n"
 			}
 		}
 	}
