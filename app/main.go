@@ -56,7 +56,7 @@ func getFiles(path string, servePath string) string {
 func postFiles(path string, servePath string, body string) string {
 	file := strings.Split(path, "/files/")[1]
 	filePath := fmt.Sprintf("%s%s", servePath, file)
-	response := "HTTP/1.1 200 Created\r\n"
+	response := "HTTP/1.1 200 Created\r\n\r\n"
 
 	_, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
