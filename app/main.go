@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"flag"
 	"fmt"
 	"log"
@@ -14,24 +16,33 @@ var _ = net.Listen
 var _ = os.Exit
 
 func echo(path string, request string) string {
-	body := strings.Split(path, "/echo/")[1]
+	body := strings.Trim(strings.Split(path, "/echo/")[1], "\r\n")
 	response := "HTTP/1.1 200 OK\r\n"
 	content_type := "text/plain"
 
 	if strings.Contains(request, "Accept-Encoding: ") {
 		encodings := strings.Trim(strings.Split(request, "Accept-Encoding: ")[1], "\r\n")
 		if strings.Contains(encodings, "gzip") {
-			response += fmt.Sprintf("Content-Type: %s\r\nContent-Encoding: gzip\r\n\r\n", content_type)
+			var buffer bytes.Buffer
+
+			w := gzip.NewWriter(&buffer)
+			w.Write([]byte(body))
+			w.Close()
+			body = buffer.String()
+
+			content_length := len(body)
+			response += fmt.Sprintf("Content-Type: %s\r\nContent-Encoding: gzip\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
+			return response
+		} else {
+			content_length := len(body)
+			response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
 			return response
 		}
-		content_length := len(body)
-		response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
-		return response
-	} else {
-		content_length := len(body)
-		response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
-		return response
 	}
+
+	content_length := len(body)
+	response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
+	return response
 }
 
 func userAgent(path string) string {
