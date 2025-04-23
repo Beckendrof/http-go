@@ -13,13 +13,21 @@ import (
 var _ = net.Listen
 var _ = os.Exit
 
-func echo(path string) string {
-	body := strings.Split(path, "/echo/")[1]
+func echo(path string, request string) string {
+	// body := strings.Split(path, "/echo/")[1]
 	response := "HTTP/1.1 200 OK\r\n"
 	content_type := "text/plain"
-	content_length := len(body)
-	response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
-	return response
+
+	if strings.Contains(request, "Accept-Encoding: gzip") {
+		response += fmt.Sprintf("Content-Type: %s\r\nContent-Encoding: gzip\r\n\r\n", content_type)
+		return response
+	} else {
+		response += fmt.Sprintf("Content-Type: %s\r\n\r\n", content_type)
+		return response
+		// content_length := len(body)
+		// response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
+		// return response
+	}
 }
 
 func userAgent(path string) string {
@@ -58,7 +66,6 @@ func postFiles(path string, servePath string, body string) string {
 	filePath := fmt.Sprintf("%s%s", servePath, file)
 	response := "HTTP/1.1 201 Created\r\n\r\n"
 	trimmedBody := strings.TrimRight(body, "\x00")
-	print(len(trimmedBody))
 
 	_, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
@@ -91,7 +98,7 @@ func do(conn net.Conn, servePath string) {
 			} else if strings.Contains(path, "/files") {
 				response = getFiles(path, servePath)
 			} else if strings.Contains(path, "/echo") {
-				response = echo(path)
+				response = echo(path, request)
 			} else if strings.Contains(path, "/user-agent") {
 				response = userAgent(request)
 			} else {
