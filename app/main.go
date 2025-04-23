@@ -31,7 +31,7 @@ func userAgent(path string) string {
 	return response
 }
 
-func files(path string, servePath string) string {
+func getFiles(path string, servePath string) string {
 	file := strings.Split(path, "/files/")[1]
 	content_type := "application/octet-stream"
 	filePath := fmt.Sprintf("%s%s", servePath, file)
@@ -53,6 +53,22 @@ func files(path string, servePath string) string {
 	return response
 }
 
+func postFiles(path string, servePath string, body string) string {
+	file := strings.Split(path, "/files/")[1]
+	filePath := fmt.Sprintf("%s%s", servePath, file)
+	response := "HTTP/1.1 200 Created\r\n"
+
+	_, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		if writeErr := os.WriteFile(filePath, []byte(body), 0644); writeErr != nil {
+			return "HTTP/1.1 500 Internal Server Error\r\n\r\n" // Handle creation error
+		}
+	} else if err != nil {
+		return "HTTP/1.1 500 Internal Server Error\r\n\r\n" // Handle other Stat errors
+	}
+	return response
+}
+
 func do(conn net.Conn, servePath string) {
 	buff := make([]byte, 1024)
 	_, err := conn.Read(buff)
@@ -71,11 +87,19 @@ func do(conn net.Conn, servePath string) {
 			if path == "/" {
 				response = "HTTP/1.1 200 OK\r\n\r\n"
 			} else if strings.Contains(path, "/files") {
-				response = files(path, servePath)
+				response = getFiles(path, servePath)
 			} else if strings.Contains(path, "/echo") {
 				response = echo(path)
 			} else if strings.Contains(path, "/user-agent") {
 				response = userAgent(request)
+			} else {
+				response = "HTTP/1.1 404 Not Found\r\n\r\n"
+			}
+		} else if strings.Contains(parts[i], "POST") {
+			log.Printf("Request: %s", parts[i])
+			path := strings.Split(parts[i], " ")[1]
+			if strings.Contains(path, "/files") {
+				response = postFiles(path, servePath, parts[len(parts)-1])
 			} else {
 				response = "HTTP/1.1 404 Not Found\r\n\r\n"
 			}
