@@ -1,52 +1,38 @@
 package main
 
 import (
+	"bufio" // Import bufio for buffered reading
 	"bytes"
 	"compress/gzip"
 	"flag"
 	"fmt"
-	"io"
+	"io" // Import io for EOF
 	"log"
 	"net"
 	"os"
 	"strings"
+	"time" // Import time for deadlines
 )
 
 // Global variable to hold the directory path
 var serveDirectory string
 
 // echo handles the /echo/ path, including potential gzip compression.
-func echo(path string, request string) string {
+func echo(path string, requestHeaders map[string]string) string { // Pass parsed headers
 	// Extract the message part from the path
-	// Check if the path actually contains "/echo/" before splitting
-	if !strings.Contains(path, "/echo/") {
-		return "HTTP/1.1 400 Bad Request\r\n\r\n" // Or 404
+	if !strings.HasPrefix(path, "/echo/") {
+		return "HTTP/1.1 400 Bad Request\r\n\r\n"
 	}
-	body := strings.SplitN(path, "/echo/", 2)[1] // Use SplitN for safety
+	body := strings.SplitN(path, "/echo/", 2)[1]
 
-	// Default response headers
 	response := "HTTP/1.1 200 OK\r\n"
 	contentType := "text/plain"
 
 	// --- Gzip Compression Check ---
-	// Find the Accept-Encoding header line
-	acceptEncodingHeader := ""
-	requestLines := strings.Split(request, "\r\n")
-	for _, line := range requestLines {
-		// Case-insensitive check for the header name
-		if strings.HasPrefix(strings.ToLower(line), "accept-encoding:") {
-			acceptEncodingHeader = line
-			break
-		}
-	}
-
+	acceptEncodingHeader := requestHeaders["accept-encoding"] // Use parsed header
 	canGzip := false
 	if acceptEncodingHeader != "" {
-		// Extract the values part (e.g., "gzip, deflate")
-		// Split after the first colon and trim whitespace
-		encodingValues := strings.TrimSpace(strings.SplitN(acceptEncodingHeader, ":", 2)[1])
-		// Check if "gzip" is present in the list of accepted encodings
-		encodings := strings.Split(encodingValues, ",")
+		encodings := strings.Split(acceptEncodingHeader, ",")
 		for _, enc := range encodings {
 			if strings.TrimSpace(enc) == "gzip" {
 				canGzip = true
@@ -59,81 +45,59 @@ func echo(path string, request string) string {
 	if canGzip {
 		var buffer bytes.Buffer
 		gzipWriter := gzip.NewWriter(&buffer)
-		// Write the original body bytes
 		_, writeErr := gzipWriter.Write([]byte(body))
-		closeErr := gzipWriter.Close() // Close is crucial
+		closeErr := gzipWriter.Close()
 
 		if writeErr != nil || closeErr != nil {
 			log.Printf("Gzip compression failed: writeErr=%v, closeErr=%v", writeErr, closeErr)
-			// Fallback to non-gzipped response or send an error?
-			// Sending 500 might be appropriate
 			return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
 		}
 
-		// *** IMPORTANT: Use the compressed bytes, NOT buffer.String() ***
 		compressedBodyBytes := buffer.Bytes()
 		contentLength := len(compressedBodyBytes)
 
-		// Construct response with compressed body and headers
-		response += "Content-Encoding: gzip\r\n"
+		response += fmt.Sprintf("Content-Encoding: gzip\r\n")
 		response += fmt.Sprintf("Content-Type: %s\r\n", contentType)
 		response += fmt.Sprintf("Content-Length: %d\r\n", contentLength)
-		response += "\r\n" // End of headers
-		// Append the raw compressed bytes as a string (problematic but matches original request)
+		response += "\r\n"
 		response += string(compressedBodyBytes)
 
 	} else {
-		// Non-gzipped response
 		contentLength := len(body)
 		response += fmt.Sprintf("Content-Type: %s\r\n", contentType)
 		response += fmt.Sprintf("Content-Length: %d\r\n", contentLength)
-		response += "\r\n" // End of headers
+		response += "\r\n"
 		response += body
 	}
 
 	return response
 }
 
-// userAgent extracts the User-Agent header value from the raw request string.
-func userAgent(request string) string {
-	userAgent := ""
-	lines := strings.Split(request, "\r\n")
-	for _, line := range lines {
-		// Case-insensitive check for the header name
-		if strings.HasPrefix(strings.ToLower(line), "user-agent:") {
-			// Extract value after the colon, trim leading/trailing space
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				userAgent = strings.TrimSpace(parts[1])
-			}
-			break // Found the header
-		}
-	}
+// userAgent extracts the User-Agent header value from parsed headers.
+func userAgent(requestHeaders map[string]string) string { // Pass parsed headers
+	userAgent := requestHeaders["user-agent"] // Use parsed header
 
-	// Construct the response
 	response := "HTTP/1.1 200 OK\r\n"
 	contentType := "text/plain"
 	contentLength := len(userAgent)
 	response += fmt.Sprintf("Content-Type: %s\r\n", contentType)
 	response += fmt.Sprintf("Content-Length: %d\r\n", contentLength)
-	response += "\r\n" // End of headers
+	response += "\r\n"
 	response += userAgent
 	return response
 }
 
 // getFiles handles GET requests for files.
 func getFiles(path string) string {
-	// Extract filename, ensure path starts with /files/
 	if !strings.HasPrefix(path, "/files/") {
 		return "HTTP/1.1 400 Bad Request\r\n\r\n"
 	}
 	fileName := strings.SplitN(path, "/files/", 2)[1]
 	if fileName == "" {
-		return "HTTP/1.1 404 Not Found\r\n\r\n" // No filename provided
+		return "HTTP/1.1 404 Not Found\r\n\r\n"
 	}
 
-	// Construct full path - NOTE: Still vulnerable to path traversal without path/filepath!
-	// Be very careful running this with arbitrary directory flags.
+	// NOTE: Still vulnerable to path traversal!
 	filePath := serveDirectory + string(os.PathSeparator) + fileName
 
 	fileContent, err := os.ReadFile(filePath)
@@ -142,125 +106,197 @@ func getFiles(path string) string {
 			return "HTTP/1.1 404 Not Found\r\n\r\n"
 		}
 		log.Printf("Error reading file %s: %v", filePath, err)
-		return "HTTP/1.1 500 Internal Server Error\r\n\r\n" // Other read error
+		return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
 	}
 
-	// Construct response
 	response := "HTTP/1.1 200 OK\r\n"
 	contentType := "application/octet-stream"
 	contentLength := len(fileContent)
 	response += fmt.Sprintf("Content-Type: %s\r\n", contentType)
 	response += fmt.Sprintf("Content-Length: %d\r\n", contentLength)
-	response += "\r\n"              // End of headers
-	response += string(fileContent) // Append file content as string
+	response += "\r\n"
+	response += string(fileContent)
 	return response
 }
 
 // postFiles handles POST requests for files.
-func postFiles(path string, requestBody string) string {
-	// Extract filename
+// NOTE: This simplistic body reading is insufficient for Keep-Alive.
+// A real implementation needs to read exactly Content-Length bytes
+// or handle chunked encoding after the headers.
+func postFiles(path string, reader *bufio.Reader, headers map[string]string) string {
 	if !strings.HasPrefix(path, "/files/") {
 		return "HTTP/1.1 400 Bad Request\r\n\r\n"
 	}
 	fileName := strings.SplitN(path, "/files/", 2)[1]
 	if fileName == "" {
-		return "HTTP/1.1 400 Bad Request\r\n\r\n" // No filename provided
+		return "HTTP/1.1 400 Bad Request\r\n\r\n"
 	}
 
-	// Construct full path - NOTE: Still vulnerable to path traversal!
+	// NOTE: Still vulnerable to path traversal!
 	filePath := serveDirectory + string(os.PathSeparator) + fileName
 
-	// Write the file content (requestBody)
-	// Note: requestBody here is extracted very simply and might contain headers
-	// if the parsing in 'do' isn't perfect. Also trims null bytes.
-	trimmedBody := strings.TrimRight(requestBody, "\x00")
-	err := os.WriteFile(filePath, []byte(trimmedBody), 0644)
+	// --- Incredibly Basic Body Reading - Highly Flawed ---
+	// This assumes the body immediately follows headers and reads *some* data.
+	// It DOES NOT correctly handle Content-Length or Transfer-Encoding.
+	// It will likely read too much or too little, breaking subsequent requests.
+	// For demonstration purposes only. A proper implementation is much harder.
+	var bodyBuffer bytes.Buffer
+	tempBuff := make([]byte, 1024) // Read in chunks
+	bytesReadTotal := 0
+	contentLengthStr := headers["content-length"]
+	contentLength := 0
+	fmt.Sscan(contentLengthStr, &contentLength) // Basic conversion
+
+	// Attempt to read roughly Content-Length bytes (still flawed)
+	for bytesReadTotal < contentLength {
+		nToRead := len(tempBuff)
+		if contentLength-bytesReadTotal < nToRead {
+			nToRead = contentLength - bytesReadTotal
+		}
+		n, err := reader.Read(tempBuff[:nToRead])
+		if n > 0 {
+			bodyBuffer.Write(tempBuff[:n])
+			bytesReadTotal += n
+		}
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("Error reading POST body for %s: %v", filePath, err)
+			}
+			break // Stop reading on error or EOF
+		}
+		if n == 0 { // Should not happen often with Read unless EOF
+			break
+		}
+	}
+	// --- End Flawed Body Reading ---
+
+	err := os.WriteFile(filePath, bodyBuffer.Bytes(), 0644)
 	if err != nil {
 		log.Printf("Error writing file %s: %v", filePath, err)
 		return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
 	}
 
-	// Respond with 201 Created
 	return "HTTP/1.1 201 Created\r\n\r\n"
 }
 
-// do handles a single connection, reads one request, sends one response, and closes.
+// do handles a single connection, looping to process multiple requests.
 func do(conn net.Conn) {
-	defer conn.Close() // Ensure connection is closed when function exits
+	// Close the connection when this function eventually exits
+	// (e.g., due to error, timeout, or client closing)
+	defer conn.Close()
 
-	// Read the request data
-	// Using a fixed buffer is fragile; requests > 1024 bytes will be truncated.
-	buff := make([]byte, 1024)
-	n, err := conn.Read(buff)
-	if err != nil {
-		// Log errors like client disconnecting prematurely, but don't crash server
-		if err != io.EOF { // EOF is expected if client closes connection cleanly
-			log.Printf("Error reading from connection: %v", err)
+	// Use a buffered reader for more efficient reading
+	reader := bufio.NewReader(conn)
+
+	// Loop to handle multiple requests on the same connection
+	for {
+		// Set a deadline for reading the next request
+		// Adjust the duration as needed (e.g., 5-10 seconds)
+		err := conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		if err != nil {
+			log.Printf("Error setting read deadline: %v", err)
+			return // Close connection if deadline can't be set
 		}
-		return // Stop processing for this connection
-	}
-	// Use only the bytes read
-	request := string(buff[:n])
 
-	// --- Basic HTTP Request Parsing ---
-	lines := strings.SplitN(request, "\r\n", -1) // Split into lines
-	if len(lines) == 0 {
-		log.Println("Received empty request")
-		return // Ignore empty request
-	}
-
-	requestLine := lines[0]
-	requestParts := strings.Split(requestLine, " ")
-	if len(requestParts) < 3 {
-		log.Printf("Malformed request line: %s", requestLine)
-		// Maybe send 400 Bad Request?
-		conn.Write([]byte("HTTP/1.1 400 Bad Request\r\n\r\n"))
-		return
-	}
-
-	method := requestParts[0]
-	path := requestParts[1]
-	// protocol := requestParts[2] // We assume HTTP/1.1 for response format
-
-	log.Printf("Request: %s %s", method, path)
-
-	response := "HTTP/1.1 404 Not Found\r\n\r\n" // Default response
-
-	// --- Routing Logic ---
-	switch method {
-	case "GET":
-		if path == "/" {
-			response = "HTTP/1.1 200 OK\r\n\r\n"
-		} else if strings.HasPrefix(path, "/echo/") {
-			response = echo(path, request) // Pass full request for header parsing
-		} else if path == "/user-agent" {
-			response = userAgent(request) // Pass full request for header parsing
-		} else if strings.HasPrefix(path, "/files/") {
-			response = getFiles(path)
-		}
-		// else: response remains 404
-
-	case "POST":
-		if strings.HasPrefix(path, "/files/") {
-			// Very basic body extraction: assumes body is everything after "\r\n\r\n"
-			bodyParts := strings.SplitN(request, "\r\n\r\n", 2)
-			requestBody := ""
-			if len(bodyParts) == 2 {
-				requestBody = bodyParts[1]
+		// --- Read Request Line ---
+		requestLine, err := reader.ReadString('\n')
+		if err != nil {
+			// Handle errors: EOF means client closed connection cleanly.
+			// Other errors (like timeout) should also close the connection.
+			if err != io.EOF {
+				log.Printf("Error reading request line: %v", err)
 			}
-			response = postFiles(path, requestBody)
+			return // Exit loop and close connection
 		}
-		// else: response remains 404
+		requestLine = strings.TrimSpace(requestLine) // Remove \r\n
+		if requestLine == "" {
+			// Sometimes keep-alive connections send empty lines; continue reading
+			continue
+		}
 
-	default:
-		response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n"
-	}
-	// --- End Routing ---
+		// --- Parse Request Line ---
+		requestParts := strings.Split(requestLine, " ")
+		if len(requestParts) < 3 {
+			log.Printf("Malformed request line: %q", requestLine)
+			conn.Write([]byte("HTTP/1.1 400 Bad Request\r\n\r\n"))
+			return // Close connection on malformed request
+		}
+		method := requestParts[0]
+		path := requestParts[1]
+		// protocol := requestParts[2] // Could check this (e.g., HTTP/1.0 needs Connection: keep-alive)
 
-	// Write the response back to the client
-	_, writeErr := conn.Write([]byte(response))
-	if writeErr != nil {
-		log.Printf("Error writing response: %v", writeErr)
+		log.Printf("Request: %s %s", method, path)
+
+		// --- Read Headers ---
+		headers := make(map[string]string)
+		for {
+			headerLine, err := reader.ReadString('\n')
+			if err != nil {
+				log.Printf("Error reading headers: %v", err)
+				return // Close connection on header read error
+			}
+			headerLine = strings.TrimSpace(headerLine)
+			if headerLine == "" {
+				// Empty line signifies end of headers
+				break
+			}
+			// Split header into key/value
+			parts := strings.SplitN(headerLine, ":", 2)
+			if len(parts) == 2 {
+				key := strings.ToLower(strings.TrimSpace(parts[0]))
+				value := strings.TrimSpace(parts[1])
+				headers[key] = value
+			} else {
+				log.Printf("Malformed header line: %q", headerLine)
+				// Optionally send 400 Bad Request and close
+			}
+		}
+
+		// --- Routing Logic ---
+		response := "HTTP/1.1 404 Not Found\r\n\r\n" // Default response
+		switch method {
+		case "GET":
+			if path == "/" {
+				response = "HTTP/1.1 200 OK\r\n\r\n"
+			} else if strings.HasPrefix(path, "/echo/") {
+				response = echo(path, headers) // Pass parsed headers
+			} else if path == "/user-agent" {
+				response = userAgent(headers) // Pass parsed headers
+			} else if strings.HasPrefix(path, "/files/") {
+				response = getFiles(path)
+			}
+		case "POST":
+			if strings.HasPrefix(path, "/files/") {
+				// Pass the reader and headers to handle body reading (still flawed)
+				response = postFiles(path, reader, headers)
+			}
+		default:
+			response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n"
+		}
+		// --- End Routing ---
+
+		// --- Write Response ---
+		// Set a deadline for writing the response
+		err = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if err != nil {
+			log.Printf("Error setting write deadline: %v", err)
+			return // Close connection
+		}
+		_, writeErr := conn.Write([]byte(response))
+		if writeErr != nil {
+			log.Printf("Error writing response: %v", writeErr)
+			return // Close connection on write error
+		}
+
+		// --- Check for Connection Close Header ---
+		// If client sent "Connection: close", break the loop to close
+		if strings.ToLower(headers["connection"]) == "close" {
+			log.Println("Client requested connection close.")
+			return // Exit loop, defer conn.Close() will execute
+		}
+		// For HTTP/1.0, we'd need to check for "Connection: keep-alive" to *stay* open
+
+		// Loop continues here for the next request...
 	}
 }
 
@@ -288,7 +324,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to bind to port %s: %v", addr, err)
 	}
-	defer l.Close() // Ensure listener is closed when main exits
+	defer l.Close()
 	log.Printf("Server listening on %s...", addr)
 	log.Printf("Serving files from directory: %s", serveDirectory)
 
@@ -296,13 +332,10 @@ func main() {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			// Log accept errors but continue if possible (e.g., temporary errors)
-			// Exit might be too drastic unless it's a fatal listener error.
 			log.Printf("Error accepting connection: %v", err)
-			// Consider adding a small delay or check error type before continuing
 			continue
 		}
 		// Handle each connection concurrently in a goroutine
-		go do(conn) // Pass only the connection
+		go do(conn)
 	}
 }
