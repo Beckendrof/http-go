@@ -18,8 +18,14 @@ func echo(path string, request string) string {
 	response := "HTTP/1.1 200 OK\r\n"
 	content_type := "text/plain"
 
-	if strings.Contains(request, "Accept-Encoding: gzip") {
-		response += fmt.Sprintf("Content-Type: %s\r\nContent-Encoding: gzip\r\n\r\n", content_type)
+	if strings.Contains(request, "Accept-Encoding: ") {
+		encodings := strings.Trim(strings.Split(request, "Accept-Encoding: ")[1], "\r\n")
+		if strings.Contains(encodings, "gzip") {
+			response += fmt.Sprintf("Content-Type: %s\r\nContent-Encoding: gzip\r\n\r\n", content_type)
+			return response
+		}
+		content_length := len(body)
+		response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
 		return response
 	} else {
 		content_length := len(body)
