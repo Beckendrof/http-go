@@ -294,9 +294,6 @@ func do(conn net.Conn) {
 			log.Println("Client requested connection close.")
 			return // Exit loop, defer conn.Close() will execute
 		}
-		// For HTTP/1.0, we'd need to check for "Connection: keep-alive" to *stay* open
-
-		// Loop continues here for the next request...
 	}
 }
 
