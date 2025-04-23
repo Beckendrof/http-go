@@ -14,7 +14,7 @@ var _ = net.Listen
 var _ = os.Exit
 
 func echo(path string, request string) string {
-	// body := strings.Split(path, "/echo/")[1]
+	body := strings.Split(path, "/echo/")[1]
 	response := "HTTP/1.1 200 OK\r\n"
 	content_type := "text/plain"
 
@@ -22,11 +22,9 @@ func echo(path string, request string) string {
 		response += fmt.Sprintf("Content-Type: %s\r\nContent-Encoding: gzip\r\n\r\n", content_type)
 		return response
 	} else {
-		response += fmt.Sprintf("Content-Type: %s\r\n\r\n", content_type)
+		content_length := len(body)
+		response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
 		return response
-		// content_length := len(body)
-		// response += fmt.Sprintf("Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, content_length, body)
-		// return response
 	}
 }
 
